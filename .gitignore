@@ -1,0 +1,16 @@
+# Tệp model (RẤT QUAN TRỌNG)
+*.pt
+*.pth
+
+# Tệp JSON credentials (BẢO MẬT)
+firebase-key.json
+
+# Thư mục cache của Python
+__pycache__/
+*.pyc
+
+# Cấu hình VSCode
+.vscode/
+
+# Dữ liệu test (nếu file này lớn)
+test_data.json
