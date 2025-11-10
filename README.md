@@ -13,7 +13,7 @@ Tích hợp Firebase để lưu trữ video và metadata
 ⚙️ 1. Cấu trúc thư mục
 ITS-Pothole-Detection/
 │
-├── app_its.py                # Ứng dụng Streamlit chính
+├── app.py                # Ứng dụng Streamlit chính
 ├── best.pt                   # File model YOLO đã huấn luyện
 ├── colab_api_server.ipynb    # Colab notebook chạy API GPU
 ├── requirements.txt          # Thư viện cần thiết
@@ -39,7 +39,7 @@ flask-cors
 pyngrok
 
 🚀 3. Chạy ứng dụng (CPU mode - bình thường)
-streamlit run app_its.py
+streamlit run app.py
 
 
 👉 Ứng dụng mở ở địa chỉ:
@@ -72,7 +72,7 @@ Khi chạy, bạn sẽ thấy đoạn log như sau:
 
 ➡️ Copy link https://your-ngrok-url.ngrok-free.dev (đường link thật của bạn).
 
-Bước 3️⃣: Sửa file app_its.py (ở dòng 20–21)
+Bước 3️⃣: Sửa file app.py (ở dòng 20–21)
 
 Thay:
 
@@ -87,7 +87,7 @@ Bước 4️⃣: Chạy Streamlit (client)
 
 Trong Codespace hoặc máy bạn:
 
-streamlit run app_its.py
+streamlit run app.py
 
 
 Ứng dụng Streamlit sẽ gửi video tới Colab GPU, Colab xử lý YOLOv8,
@@ -150,7 +150,7 @@ Mode	Tốc độ	Phù hợp khi
 ⚡ GPU (Colab)	~25–40 FPS	demo đồ án, video thực tế
 🏁 10. Liên kết quan trọng
 
-Streamlit App: chạy bằng streamlit run app_its.py
+Streamlit App: chạy bằng streamlit run app.py
 
 Colab API (GPU): colab_api_server.ipynb
 
