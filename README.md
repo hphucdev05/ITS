@@ -1,75 +1,159 @@
+TS - Pothole Detection System (YOLOv8 + Streamlit + Firebase + Colab GPU)
+🧩 Giới thiệu
 
- 5. Khởi Chạy Ứng Dụng Streamlit
+Ứng dụng phát hiện ổ gà (pothole detection) trong video đường giao thông bằng mô hình YOLOv8.
+Dự án hỗ trợ:
 
-# (CHỈ DÀNH CHO WINDOWS/PowerShell): Gỡ bỏ giới hạn thực thi tạm thời 
+Chạy trên CPU (local hoặc Streamlit Cloud)
 
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+Kết nối Colab GPU qua API (nhanh hơn nhiều)
 
-# KHỞI CHẠY APP
-streamlit run app.py
+Tích hợp Firebase để lưu trữ video và metadata
 
-# Kích hoạt
+⚙️ 1. Cấu trúc thư mục
+ITS-Pothole-Detection/
+│
+├── app_its.py                # Ứng dụng Streamlit chính
+├── best.pt                   # File model YOLO đã huấn luyện
+├── colab_api_server.ipynb    # Colab notebook chạy API GPU
+├── requirements.txt          # Thư viện cần thiết
+└── README.md                 # File hướng dẫn này
 
-.\venv\Scripts\activate
+🧠 2. Cài đặt môi trường
+Nếu bạn chạy LOCAL / CODESPACE / STREAMLIT CLOUD
 
-Dự án này sử dụng mô hình AI (YOLO/Roboflow) để nhận diện các thành phần món ăn từ hình ảnh và tích hợp với Streamlit (GUI của Python) để cung cấp giao diện người dùng thân thiện.
-
-I. Yêu Cầu Hệ Thống
-
-Hệ điều hành: Windows, macOS, hoặc Linux.
-
-Ngôn ngữ: Python 3.8+ (Đã được kiểm thử với Python 3.11).
-
-Cấu hình: Nên có GPU (ít nhất 4GB VRAM) để chạy các mô hình AI như YOLO/Ultralytics nhanh hơn.
-
-II. Hướng Dẫn Cài Đặt và Khởi Chạy
-
-Các lệnh dưới đây được viết cho môi trường PowerShell (Windows) và Terminal (macOS/Linux).
-
-1. Tải Mã Nguồn (Clone Repository)
-
-git clone <URL_repository_của_bạn>
-cd <tên_thư_mục_dự_án>
-
-
-2. Thiết Lập Môi Trường Ảo (Virtual Environment)
-
-Sử dụng môi trường ảo giúp cô lập thư viện và tránh xung đột.
-PowerShell (Windows)
-# Tạo venv
-
-python -m venv venv
-
-
-
-
-💡 Lưu ý: Sau khi kích hoạt thành công, bạn sẽ thấy (venv) xuất hiện ở đầu dòng lệnh.
-
-3. Cài Đặt Thư Viện Phụ Thuộc (Dependencies)
-
-# Sử dụng file requirements.txt (chứa hơn 200 thư viện, bao gồm streamlit, torch, opencv-python, ultralytics, và roboflow).
+Cài thư viện:
 
 pip install -r requirements.txt
 
 
-4. Thiết Lập API Key (Roboflow)
+File requirements.txt nên gồm:
 
-CẢNH BÁO: Không bao giờ nhập khóa API thật vào file mã nguồn hoặc README. Hãy thiết lập biến môi trường.
+streamlit
+ultralytics
+opencv-python
+firebase-admin
+requests
+flask
+flask-cors
+pyngrok
 
-# Windows (PowerShell)
-
-# $env:ROBOFLOW_API_KEY="YOUR_API_KEY_HERE"
-
+🚀 3. Chạy ứng dụng (CPU mode - bình thường)
+streamlit run app_its.py
 
 
+👉 Ứng dụng mở ở địa chỉ:
+http://localhost:8501
+
+Sau đó:
+
+Upload video đường (mp4, mov, avi, mkv)
+
+Ứng dụng sẽ xử lý bằng YOLOv8 (CPU)
+
+Hiển thị kết quả phát hiện ổ gà và upload lên Firebase
+
+⚡ 4. Chạy nhanh với GPU (Colab Integration)
+Bước 1️⃣: Mở notebook colab_api_server.ipynb trong Google Colab
+
+Upload các file cần thiết:
+
+best.pt
+
+colab_api_server.ipynb
+
+Bước 2️⃣: Chạy các cell trong notebook
+
+Khi chạy, bạn sẽ thấy đoạn log như sau:
+
+🚀 API running on: https://your-ngrok-url.ngrok-free.dev
+ * Running on http://127.0.0.1:5000
 
 
-Ứng dụng sẽ tự động mở trong trình duyệt của bạn (thường là: http://localhost:8501).
+➡️ Copy link https://your-ngrok-url.ngrok-free.dev (đường link thật của bạn).
 
-III. Cấu Trúc Dự Án
+Bước 3️⃣: Sửa file app_its.py (ở dòng 20–21)
 
-app.py: File chính chứa logic giao diện Streamlit và xử lý gọi mô hình AI.
+Thay:
 
-requirements.txt: Danh sách các thư viện cần thiết.
+API_URL = "https://alaina-debentured-earnestine.ngrok-free.dev/predict"
 
-assets/: Chứa các tài nguyên như ảnh mẫu, icon, v.v. (Tùy chọn)
+
+Bằng:
+
+API_URL = "https://your-ngrok-url.ngrok-free.dev/predict"
+
+Bước 4️⃣: Chạy Streamlit (client)
+
+Trong Codespace hoặc máy bạn:
+
+streamlit run app_its.py
+
+
+Ứng dụng Streamlit sẽ gửi video tới Colab GPU, Colab xử lý YOLOv8,
+và trả lại video đã có bounding boxes (ổ gà được khoanh vùng).
+
+☁️ 5. Firebase Integration (tùy chọn)
+
+Để bật upload video & lưu kết quả, thêm file secret trong Streamlit:
+
+Vào Streamlit Cloud → Settings > Secrets
+
+Dán key Firebase JSON vào:
+
+[FIREBASE_KEY]
+{
+  "type": "...",
+  "project_id": "...",
+  "private_key_id": "...",
+  "private_key": "...",
+  "client_email": "...",
+  ...
+}
+
+
+Ứng dụng sẽ tự động:
+
+Upload video gốc / kết quả lên Firebase Storage
+
+Lưu metadata vào Firestore (detections collection)
+
+🧠 6. Nguyên lý hoạt động
+Thành phần	Vai trò
+Streamlit	Giao diện web, upload video, hiển thị kết quả
+YOLOv8	Mô hình phát hiện ổ gà
+Firebase	Lưu trữ video và kết quả
+Flask (Colab)	API chạy YOLO trên GPU
+Ngrok	Tạo public link để Streamlit gửi request tới Colab
+🧪 7. API Test nhanh (không cần Streamlit)
+
+Nếu bạn muốn test riêng API trên Colab GPU:
+
+curl -X POST -F "file=@road.mp4" https://your-ngrok-url.ngrok-free.dev/predict --output result.mp4
+
+
+→ File result.mp4 sẽ là video có bounding boxes.
+
+🧭 8. Kết quả đầu ra
+
+Video gốc có bounding boxes quanh các ổ gà.
+
+Thống kê số ổ gà (potholes) và số frame (frames) phát hiện.
+
+Kết quả upload Firebase (nếu bật).
+
+GPU inference ~30 FPS (so với ~3 FPS CPU).
+
+🧩 9. Ghi chú hiệu năng
+Mode	Tốc độ	Phù hợp khi
+🧠 CPU (Codespace/Cloud)	~3–5 FPS	demo nhẹ, không có GPU
+⚡ GPU (Colab)	~25–40 FPS	demo đồ án, video thực tế
+🏁 10. Liên kết quan trọng
+
+Streamlit App: chạy bằng streamlit run app_its.py
+
+Colab API (GPU): colab_api_server.ipynb
+
+Firebase Console: https://console.firebase.google.com
+
+YOLO Docs: https://docs.ultralytics.com
