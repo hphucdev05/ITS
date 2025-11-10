@@ -13,10 +13,20 @@ import gpxpy
 import gpxpy.gpx
 import torch
 
-# --- CẤU HÌNH (CHO LOCAL) ---
+# --- HÀM DETECT ---
+def detect_video(model, cap, conf_threshold=0.4):
+    """Generator xử lý từng frame bằng YOLOv8."""
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        results = model.predict(frame, conf=conf_threshold, verbose=False)
+        yield frame, results[0]
+
+# --- CẤU HÌNH YOLO ---
 @st.cache_resource
 def load_yolo_model():
-    """Tải model YOLOv8 'best.pt' một lần và cache lại."""
+    """Tải model YOLOv8 một lần."""
     try:
         model = YOLO("best.pt")
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -25,13 +35,12 @@ def load_yolo_model():
         return model
     except Exception as e:
         st.sidebar.error(f"Lỗi tải model: {e}")
-        st.error("Không tìm thấy file 'best.pt'.")
         return None
 
 # --- CẤU HÌNH FIREBASE ---
 @st.cache_resource
 def init_firebase():
-    """Khởi tạo kết nối Firebase một lần và cache lại."""
+    """Kết nối Firebase."""
     try:
         if not firebase_admin._apps:
             cred = credentials.Certificate("firebase-key.json")
@@ -40,8 +49,7 @@ def init_firebase():
         st.sidebar.success("Đã kết nối Firebase!")
         return db
     except Exception as e:
-        st.sidebar.error(f"Lỗi kết nối Firebase: {e}")
-        st.error("Không tìm thấy file 'firebase-key.json'.")
+        st.sidebar.error(f"Lỗi Firebase: {e}")
         return None
 
 model = load_yolo_model()
@@ -52,7 +60,6 @@ db = init_firebase()
 def parse_gpx(gpx_file_data):
     gpx = gpxpy.parse(gpx_file_data)
     if not gpx.tracks:
-        st.error("File GPX không chứa 'tracks'!")
         return None
     track = gpx.tracks[0]
     segment = track.segments[0]
@@ -60,8 +67,7 @@ def parse_gpx(gpx_file_data):
     start_time = None
     for point in segment.points:
         if point.time is None:
-            st.error("File GPX không có timestamp.")
-            return None
+            continue
         if start_time is None:
             start_time = point.time
         current_sec = (point.time - start_time).total_seconds()
@@ -70,11 +76,7 @@ def parse_gpx(gpx_file_data):
             "lat": point.latitude,
             "lon": point.longitude
         })
-    if not points:
-        st.error("Không tìm thấy điểm GPS.")
-        return None
-    st.sidebar.success(f"Đã đọc {len(points)} điểm GPS.")
-    return points
+    return points if points else None
 
 def get_gps_for_second(gpx_data, video_second):
     if not gpx_data:
@@ -82,7 +84,7 @@ def get_gps_for_second(gpx_data, video_second):
     closest_point = min(gpx_data, key=lambda p: abs(p['sec'] - video_second))
     return closest_point['lat'], closest_point['lon']
 
-# --- XÓA DATABASE ---
+# --- XÓA DỮ LIỆU ---
 def delete_all_potholes(db_client):
     batch_size = 50
     docs = db_client.collection("potholes").limit(batch_size).stream()
@@ -101,135 +103,101 @@ def delete_all_potholes(db_client):
 st.set_page_config(layout="wide")
 st.title("🕳️ Dashboard Phát hiện Ổ gà (ITS) - YOLOv8 (Tối ưu CPU)")
 
-tab1, tab2 = st.tabs(["Xử lý Video (Nhanh)", "Bản đồ Ổ gà (Dữ liệu)"])
+st.sidebar.header("⚙️ Cấu hình")
+CONF_THRESHOLD = st.sidebar.slider("Ngưỡng tin cậy:", 0.1, 1.0, 0.4, 0.05)
 
-# --- TAB 1 ---
-with tab1:
-    st.header("Xử lý Video (Nhanh hơn 10–30x, không cần GPU)")
-    st.sidebar.header("⚙️ Tùy chỉnh")
+uploaded_video_file = st.file_uploader("🎥 Tải video (.mp4)", type=["mp4"])
+uploaded_gpx_file = st.file_uploader("📍 Tải file GPX (tùy chọn)", type=["gpx"])
 
-    CONF_THRESHOLD = st.sidebar.slider(
-        "Ngưỡng tin cậy:",
-        min_value=0.1, max_value=1.0, value=0.4, step=0.05
-    )
+# 🚀 TỰ ĐỘNG XỬ LÝ KHI CÓ VIDEO
+if uploaded_video_file and model and db:
+    st.header("🔄 Đang xử lý video (tự động)...")
+    progress = st.progress(0, text="Khởi tạo mô hình...")
 
-    uploaded_video_file = st.file_uploader("1️⃣ Chọn video (.mp4)", type=["mp4"])
-    uploaded_gpx_file = st.file_uploader("2️⃣ Chọn file GPX (tùy chọn)", type=["gpx"])
-    start_button = st.button("🚀 Bắt đầu xử lý")
+    temp_video_path = os.path.join(tempfile.gettempdir(), "uploaded_video.mp4")
+    with open(temp_video_path, "wb") as f:
+        f.write(uploaded_video_file.read())
 
-    if start_button and uploaded_video_file and model and db:
-        temp_video_path = os.path.join(tempfile.gettempdir(), "uploaded_video.mp4")
-        with open(temp_video_path, "wb") as f:
-            f.write(uploaded_video_file.read())
+    # GPX (nếu có)
+    gpx_data = None
+    if uploaded_gpx_file is not None:
+        try:
+            gpx_data = parse_gpx(uploaded_gpx_file.getvalue())
+            st.sidebar.success("Đã đọc file GPX.")
+        except Exception as e:
+            st.sidebar.error(f"Lỗi đọc GPX: {e}")
+    else:
+        st.sidebar.warning("Không có GPX, dùng tọa độ giả định.")
 
-        # --- Đọc GPX ---
-        gpx_data = None
-        if uploaded_gpx_file is not None:
-            try:
-                gpx_data = parse_gpx(uploaded_gpx_file.getvalue())
-            except Exception as e:
-                st.error(f"Lỗi đọc GPX: {e}")
-                gpx_data = None
-        else:
-            st.warning("Không có file GPX — sẽ dùng tọa độ giả định.")
+    # Thông tin video
+    cap = cv2.VideoCapture(temp_video_path)
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        stframe = st.empty()
-        progress = st.progress(0, text="Đang xử lý video...")
+    # Ghi video output
+    output_path = os.path.join(tempfile.gettempdir(), "output_detected.mp4")
+    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
 
-        # --- Thông tin video ---
-        cap = cv2.VideoCapture(temp_video_path)
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.release()
+    stframe = st.empty()
+    base_lat, base_lon = 10.7769, 106.6954
+    potholes = []
 
-        # --- VideoWriter ---
-        output_path = os.path.join(tempfile.gettempdir(), "output_detected.mp4")
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    # Duyệt từng frame
+    for idx, (frame, result) in enumerate(detect_video(model, cap, CONF_THRESHOLD)):
+        annotated = frame.copy()
+        for box in result.boxes:
+            conf = float(box.conf[0])
+            if conf >= CONF_THRESHOLD:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.putText(annotated, "O ga", (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-        base_lat, base_lon = 10.7769, 106.6954
-        potholes = []
-        frame_idx = 0  # ✅ Khởi tạo biến đếm frame
-
-        results = model.predict(
-            source=temp_video_path,
-            conf=CONF_THRESHOLD,
-            stream=True
-        )
-
-        # --- Xử lý từng frame ---
-        for r in results:
-            frame = r.orig_img.copy()
-            boxes = r.boxes
-
-            # --- Vẽ khung và chữ “Ổ gà” ---
-            for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0].int().tolist()
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                cv2.putText(frame, "O ga", (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-
-            out.write(frame)
-
-            # Hiển thị mỗi 5 frame để đỡ lag
-            if frame_idx % 5 == 0:
-                stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-
-            progress.progress(min(frame_idx / total_frames, 1.0),
-                              text=f"Đang xử lý {frame_idx}/{total_frames} frames")
-
-            # --- Lưu kết quả ổ gà ---
-            if len(r.boxes) > 0:
-                video_second = frame_idx / fps
+                video_second = idx / fps
                 lat, lon = get_gps_for_second(gpx_data, video_second)
                 if lat is None:
                     lat = base_lat + random.uniform(-0.00005, 0.00005)
                     lon = base_lon + random.uniform(-0.00005, 0.00005)
-                for box in r.boxes:
-                    potholes.append({
-                        "latitude": lat,
-                        "longitude": lon,
-                        "timestamp": datetime.datetime.now().isoformat(),
-                        "confidence": float(box.conf[0])
-                    })
+                potholes.append({
+                    "latitude": lat,
+                    "longitude": lon,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "confidence": conf
+                })
 
-            frame_idx += 1  # ✅ Tăng frame index
+        out.write(annotated)
+        if idx % 5 == 0:
+            stframe.image(annotated, channels="BGR", use_container_width=True)
+        progress.progress(min(idx / total_frames, 1.0), text=f"Đang xử lý {idx}/{total_frames}...")
 
-        out.release()
-        os.remove(temp_video_path)
-        progress.empty()
+    cap.release()
+    out.release()
+    progress.empty()
 
-        # --- Lưu Firebase ---
-        if potholes:
-            for p in potholes:
-                db.collection("potholes").add(p)
-            st.success(f"✅ Hoàn tất! Phát hiện {len(potholes)} ổ gà.")
-        else:
-            st.warning("Không phát hiện ổ gà nào.")
+    # Lưu Firebase
+    if potholes:
+        for p in potholes:
+            db.collection("potholes").add(p)
+        st.success(f"✅ Hoàn tất! Phát hiện {len(potholes)} ổ gà.")
+    else:
+        st.warning("Không phát hiện ổ gà nào.")
 
-        st.video(output_path)
+    st.video(output_path)
+    st.info("Video đã được xử lý và lưu. Dashboard dữ liệu sẽ xuất hiện tự động sau khi có kết quả.")
 
-    elif not uploaded_video_file:
-        st.info("Vui lòng tải lên video để bắt đầu.")
-    elif db is None or model is None:
-        st.error("Lỗi khởi tạo model hoặc Firebase.")
-
-# --- TAB 2 ---
-with tab2:
-    st.header("Bản đồ Ổ gà (Dữ liệu)")
-    if db:
-        potholes_ref = db.collection("potholes")
-        docs = potholes_ref.stream()
-        pothole_data = [{"id": doc.id, **doc.to_dict()} for doc in docs]
-        if pothole_data:
-            df = pd.DataFrame(pothole_data)
-            st.dataframe(df)
-        else:
-            st.info("Chưa có dữ liệu ổ gà nào trong Firestore.")
+# 🧭 HIỂN THỊ DASHBOARD SAU KHI XONG
+elif db:
+    potholes_ref = db.collection("potholes")
+    docs = potholes_ref.stream()
+    pothole_data = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+    if pothole_data:
+        st.header("📊 Dữ liệu Ổ gà từ Firestore")
+        df = pd.DataFrame(pothole_data)
+        st.dataframe(df)
         if st.button("🗑️ Xóa toàn bộ dữ liệu"):
             deleted = delete_all_potholes(db)
             st.warning(f"Đã xóa {deleted} bản ghi khỏi Firestore.")
     else:
-        st.error("Firebase chưa sẵn sàng.")
+        st.info("📭 Chưa có dữ liệu ổ gà nào — hãy tải video để bắt đầu xử lý.")
